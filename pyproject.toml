@@ -1,0 +1,26 @@
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quadratic-kalman"
+version = "0.1.0"
+description = "A JAX-based implementation of the Kalman filter."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Cedric Brendel", email = "cedric-brendel@freenet.de" }
+]
+
+dependencies = [
+    "jax",
+    "jaxlib",
+]
+
+[tool.setuptools.packages.find]
+include = ["quadratic_kalman*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
