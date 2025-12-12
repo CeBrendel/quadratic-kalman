@@ -1,0 +1,239 @@
+\documentclass{article}
+
+\usepackage[english]{babel}
+
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+\usepackage{algorithm, algpseudocode, caption}
+\usepackage{amsmath, amssymb}
+\usepackage{amsthm}
+\usepackage{float}  % force float to stay at their location of definition
+\usepackage{hyperref}
+
+\hypersetup{
+	colorlinks = true,
+	citecolor  = blue,
+	linkcolor  = blue, 
+	filecolor  = blue,      
+	urlcolor   = blue,
+}
+
+\newtheorem{lemma}{Lemma}
+
+\newcommand{\ldef}{:=}
+\newcommand{\R}{\mathbf R}
+\newcommand{\pred}{\mathrm{pred}}
+\newcommand{\upd}{\mathrm{upd}}
+\renewcommand{\d}{\,\mathrm d}
+\newcommand{\E}{\mathbb E}
+\newcommand{\Cov}{\mathrm{Cov}}
+
+\parskip3mm
+\parindent0mm
+
+\author{Cedric Brendel}
+\date{\today}
+\title{Quadratic Kalman}
+
+\begin{document}
+	\maketitle
+	
+	\section{Notation}
+	The shorthand $\ldef y$ is to be read as ``is defined as'', e. g. $x\ldef 2$ is to be read as ``$x$ is defined as $2$''.
+	
+	By $\mathcal N(\mu, \Sigma)$ we denote the normal distribution with mean $\mu$ and covariance matrix $\Sigma$ and we write $X\sim \mathcal N(\mu, \Sigma)$ if the random variable $X$ is distributed as such. In case that $\Sigma$ is positive definite, we denote by $\Vert x \Vert_\Sigma = \sqrt{x^\top\Sigma^{-1}x}$ the \emph{Mahalanobis norm} of $x$. If $X$ is a random variable and $\mathcal F$ is some information (e. g. the information $\{Y=y\}$ for some second random variable $Y$ and a realization $y$ thereof), we denote by $X\vert \mathcal F$ the random variable obtained by conditioning on the information $\mathcal F$. Its density at $x$ is denoted by $p(X=x\vert \mathcal F)$. The expectation and covariance of the random variable $X$ are denoted by $\E[X]$ and $\Cov[X]$ and the notations $\E[X\vert \mathcal F]$ and $\Cov[X\vert \mathcal F]$ do not(!) denote the conditional expectation and covariance but instead the expectation and covariance of the random variable $X\vert \mathcal F$.
+	
+	The notations $\nabla_x f$ and $H_x f$ denote the gradient and Hessian of the function $f$ at the point $x$. By $f\propto g$ we denote the relation that the (real valued) functions $f$ and $g$ live on the same domain and are scalar multiples of each other, i. e. that there is some real $c\ne 0$ with $f = c\cdot g$. Similarly, by $f \frown g$ we denote the relation that the (real valued) functions $f$ and $g$ live on the same domain and are related by an (invertible) affine transformation, e. g. $f \frown 2\cdot f + 1$ but usually not $f\frown \log f$.
+	
+	\section{The Kalman Filter}
+	
+	Assume we have points in time $t=1,\dots,T$ and associated states $X_t\sim \mathcal N(x_t, P_t)$. Assume that the states evolve as $X_t = F_t X_{t-1} + W_t$ where $F_t$ is the \emph{state transition matrix} and $W_t\sim \mathcal N(0, Q_t)$ is the \emph{state transition noise}. Assume further that the states $X_t$ cannot be observed directly but instead only the variables $Y_t = H_tX_t + V_t$ can be observed, where $H_t$ is the \emph{observation matrix} and $V_t \sim \mathcal N(0, R_t)$ is the \emph{observation noise}. Assume further that some initial state $X_0 \sim \mathcal N(x_0, P_0)$ is given and that the initial state and all $W_t$ and $V_t$ are mutually independent. The \emph{Kalman filter} estimates the (realized) states $x_1,\dots, x_T$ from observations $y_1, \dots, y_T$. More precisely, (unbiased) estimates $X_{t\vert t}$ of $x_t$ and estimates $P_{t\vert t}$ of the covariance of the error $X_t - X_{t\vert t}$ are constructed for each $t=1\dots,T$ such that each estimate only uses the information $Y_k=y_k$ for $k=1, \dots, t$.
+	
+	The Kalman filter is well-viewed through a Bayesian lens. It consists of two \emph{phases}. The \emph{prediction phase} that estimates the posterior state $X_t\vert\{Y_{\le t-1}=y_{\le t-1}\}$ at time $t$ from observations up to and including $t-1$. The \emph{update phase} incorporates the newly obtained observation $y_t$ to estimate the posterior $X_t\vert\{Y_{\le t}=y_{\le t}\}$. As we will see, in both cases these posteriors are Gaussian and hence it is enough to estimate the means $x_{t\vert t-1}$ and $x_{t\vert t}$ as well as the covariances $P_{t\vert t-1}$ and $P_{t\vert t}$.
+	
+	Consider first the prediction phase. Using marginalization we find that
+	\begin{align*}
+		p(X_t=x_t\vert Y_{\le t-1}=y_{\le t-1}) &= \int \underbrace{p(X_t=x_t\vert X_{t-1}=x_{t-1})}_{=\mathcal N(F_tx_{t-1}, Q_t)}\cdot \underbrace{p(X_{t-1}=x_{t-1}\vert Y_{\le t-1}=y_{\le t-1})}_{=\mathcal N(x_{t-1\vert t-1}, P_{t-1\vert t-1})} \d x_{t-1}
+	\end{align*}
+	since $p(X_t=x_t\vert X_{t-1}=x_{t-1}, Y_{\le t-1}=y_{\le t-1}) = p(X_t=x_t\vert X_{t-1}=x_{t-1})$ as the next state $X_t$ is completely determined by the current state $x_{t-1}$ and the state transition noise $W_t$ -- all independent of $\{Y_{\le t-1}=y_{\le t-1}\}$. Thus, $X_t\vert \{Y_{\le t-1}=y_{\le t-1}\}$ is again Gaussian. We find that
+	\begin{align*}
+		x_{t\vert t-1}
+		&\ldef \E[F_t\cdot X_{t-1}+W_t\vert Y_{\le t-1}=y_{\le t-1}]\\
+		&= F_t\cdot \E[X_{t-1}\vert Y_{\le t-1}=y_{\le t-1}] + \E[W_t\vert Y_{\le t-1}=y_{\le t-1}]\\
+		&= F_t\cdot x_{t-1\vert t-1} + \E[W_t]\\
+		&= F_t\cdot x_{t-1\vert t-1}
+	\end{align*}
+	as $W_t$ is independent of $\{Y_{\le t-1}=y_{\le t-1}\}$. For the covariance observe that
+	$$X_t - x_{t\vert t-1} = F_t\cdot (X_{t-1} - x_{t-1\vert t-1}) + W_t$$
+	and hence that
+	\begin{align*}
+		P_{t\vert t-1}
+		&\ldef \Cov[X_t\vert Y_{\le t-1}=y_{\le t-1}]\\
+		&= \E[(X_t - x_{t\vert t-1})(X_t - x_{t\vert t-1})^\top\vert Y_{\le t-1}=y_{\le t-1}]\\
+		&\overset{(\ast)}{=}F_t\cdot \E[(X_{t-1}-x_{t-1\vert t-1})(X_{t-1} - x_{t-1\vert t-1})^\top\vert Y_{\le t-1}=y_{\le t-1}]\cdot F_t^\top + \E[W_t W_t^\top]\\
+		&= F_t\Cov[X_{t-1}\vert Y_{\le t-1}=y_{\le t-1}] F_t^\top + Q_t\\
+		&= F_tP_{t-1\vert t-1}F_t^\top + Q_t
+	\end{align*}
+	where $(\ast)$ holds as the cross terms vanish and the final expectation is unconditional since $W_t$ is independent of $X_{t-1}-x_{t-1\vert t-1}$ and $\{Y_{\le t-1}=y_{\le t-1}\}$ respectively. Thus we find
+	$$X_t\vert\{Y_{\le t-1}=y_{\le t-1}\} \sim \mathcal N(x_{t\vert t-1}, P_{t\vert t-1})$$
+	with $x_{t\vert t-1}=F_tx_{t-1\vert t-1}$ and $P_{t\vert t-1}= F_tP_{t-1\vert t-1}F_t^\top + Q_t$.
+	
+	We can now investigate $X_t\vert\{Y_{\le t}=y_{\le t}\}$. Applying Bayes' rule for densities, we find that
+	\begin{align*}
+		p(X_t=x_t\vert Y_{\le t}=y_{\le t}) &= p(X_t=x_t\vert Y_t=y_t, Y_{\le t-1}=y_{\le t-1})\\
+		&\propto p(Y_t=y_t\vert X_t=x_t, Y_{\le t-1}=y_{\le t-1})\cdot p(X_t=x_t\vert Y_{\le t-1}=y_{\le t-1})\\
+		&= \underbrace{p(Y_t=y_t\vert X_t=x_t)}_{\mathcal N(H_tx_t, R_t)}\cdot \underbrace{p(X_t=x_t\vert Y_{\le t-1}=y_{\le t-1})}_{\mathcal N(x_{t\vert t-1}, P_{t\vert t-1})},
+	\end{align*}
+	yielding that $X_t\vert\{Y_{\le t}=y_{\le t}\}$ is again Gaussian. (Up to affine transformation) the negative log-likelihood is then
+	\begin{align*}
+		-\log p(X_t=x_t\vert Y_{\le t}=y_{\le t}) &= -\log p(Y_t=y_t\vert X_t=x_t) - \log p(X_t=x_t\vert Y_{\le t-1}=y_{\le t-1})\\
+		&\frown \frac12 (y_t-H_tx_t)^\top R_t^{-1}(y_t - H_tx_t) + \frac12 (x_t-x_{t\vert t-1})^\top P_{t\vert t-1}^{-1}(x_t - x_{t\vert t-1})\\
+		&= \frac12 \Vert y_t - H_tx_t\Vert_{R_t}^2 + \frac12 \Vert x_t-x_{t\vert t-1}\Vert_{P_{t\vert t-1}}^2.
+	\end{align*}
+	Recall that for a Gaussian $X\sim\mathcal N(\mu, \Sigma)$ the negative log-likelihood is $-\log p_X(x) \frown \frac12 (x-\mu)^\top\Sigma^{-1}(x-\mu)$ and hence the mean $\mu$ is the unique minimizer of $-\log p_X$ while the Hessian at $\mu$ is the precision matrix $\Sigma^{-1}$. Thus the posterior mean respectively covariance of $X_t\vert \{Y_{\le t}=y_{\le t}\}$ can be found as the minimizer respectively inverse of the Hessian (at the minimizer) of this quadratic function.
+	
+	\section{``Quadratic Kalman''}
+	
+	Assume we have points in time $t=1,\dots, T$ and are given a (time-varying, strictly convex) quadratic objective $q_t$, represented by its gradient $\nabla_0 q_t$ and its (positive definite) Hessian $H_0 q_t$ at $0$, i.e. $q_t(x) \frown \frac 12 x^\top (H_0q_t) x + (\nabla_0 q_t)^\top x$. Further, assume that the state $X_t$ is random, potentially satisfies equality constraints $A_tX_t=b_t$ where the $A_t$ are matrices of full row rank and $b_t$ are vectors, evolves as $X_t = F_tX_{t-1} + W_t$ where $F_t$ is the \emph{state transition matrix} and $W_t \sim \mathcal N(0, Q_t)$ is the \emph{state transition noise}, and finally $X_0\sim\mathcal N(x_0, P_0)$ is given. 
+	
+	We seek to find an estimate $x_{t\vert t}$ of the (realized, hidden) state $x_t$ and its covariance $P_{t\vert t}$ at time $t$, given information up to an including time $t$.
+	
+	The prediction step of ``Quadratic Kalman'' is completely analogous to the one of the Kalman filter
+	
+	The difference to the Kalman filter lies in the update step. Recall that the update step of the Kalman filter aims to uncover the distribution of the (Gaussian) random variable $X_t\vert \{Y_{\le t}=y_{\le t}\}$ and does so by considering the conditional negative log likelihood
+		$$-\log p(X_t=x_t\vert Y_{\le t}=y_{\le t}) \frown \frac12\Vert x_t - x_{t\vert t-1}\Vert^2_{P_{t\vert t-1}} + \frac12\Vert y_t - H_tx_t\Vert_{R_t}^2$$
+	which consists of the squared deviation $\Vert x_t - x_{t\vert t-1}\Vert^2_{P_{t\vert t-1}}$ from the prior $x_{t\vert t-1}$ and of the squared deviation $\Vert y_t - H_tx_t\Vert_{R_t}^2$ of the observation $y_t$ from the predicted observation $H_tx_t$. ``Quadratic Kalman'' instead pretends there is some ``virtual'' information $\mathcal F_t$ uncovered up to time $t$ and aims to uncover the distribution of the variable $X_t\vert \mathcal F_t$. It does so by assuming that the conditional log likelihood of this variable is given by
+		$$\tilde q_t(x_t) \ldef -\log p(X_t=x_t\vert \mathcal F_t) \ldef \frac12\Vert x_t-x_{t\vert t-1}\Vert_{P_{t\vert t-1}}^2 + q_t(x_t),$$    
+	where $q_t$ is an arbitrary quadratic objective specified by the user. As this negative log likelihood is Gaussian, such a random variable $X_t\vert \mathcal F_t$ must be Gaussian. 
+	
+	If one wants to incorporate the constraint $A_tx_t=b_t$ into this probabilistic setting one has to adjust the estimated state covariance $P_{t\vert t}$. Indeed, the stricter the constraint (i. e. the smaller the dimension of the (affine) subspace of feasible $x_t$ with $Ax_t=b_t$) the less uncertainty there is in our estimate of $x_{t\vert t}$. In the extreme case of a single feasible solution there is no(!) uncertainty! In ``Quadratic Kalman'' this is done by considering the family of (negative log) likelihoods
+		$$-\log p_\varepsilon(X_t=x_t\vert \mathcal F_t) \ldef -\log p(X_t=x_t\vert \mathcal F_t) + \frac1{2\varepsilon}\Vert A_tx_t-b_t\Vert^2$$
+	and considering the limit of the corresponding estimates of mean and covariance (of an associated Gaussian random variable) as $\varepsilon\to 0$.
+	
+	It is now not too hard to derive explicit analytic solutions of the desired state estimate $x_{t\vert t}$ and state covariance $P_{t\vert t}$ for both the unconstrained and constrained case using the lemmata \ref{lemma: unconstrained quadratic}, \ref{lemma: constrained quadratic} and \ref{lemma: inverse of hessian of constrained quadratic}. For this, notice that for a (non-degenerate) Gaussian random variable, the mean and covariance are given by the unique minimizer and the inverse of the Hessian (at the minimizer) of the negative log likelihood. Indeed, if $X\sim \mathcal N(\mu, \Sigma)$ then $-\log p(X=x) = \frac12(x-\mu)^\top\Sigma^{-1}(x-\mu)$ and the unique minimizer is $\mu$ and the Hessian at the minimizer is the precision matrix $\Sigma^{-1}$.
+	
+	For these lemmata we require the gradient and Hessian of the negative log likelihoods at $0$. We calculate that
+		$$g_t\ldef \nabla_0\tilde q_t = \nabla_0 q_t - P_{t\vert t-1}^{-1}x_{t\vert t-1}$$
+	and
+		$$H_t\ldef H_0 \tilde q_t = H_0q_t + P_{t\vert t-1}^{-1}.$$
+	
+	In the unconstrained case, lemma \ref{lemma: unconstrained quadratic} yields that the updated state estimate is given by
+		$$x_{t\vert t} = -H_t^{-1}g_t$$
+	and it is clear that the updated state covariance estimate is
+		$$P_{t\vert t} = H_t^{-1}.$$
+		
+	In the constrained case, lemma \ref{lemma: constrained quadratic} yields that
+		$$x_{t\vert t} = -H_t^{-1}(b_t + A_t^\top \lambda^\ast)$$
+	with
+		$$\lambda^\ast = -(A_t H_t^{-1} A_t^\top)^{-1}(b_t+A_tH_t^{-1}g_t),$$
+	since $A_t$ has full row rank. Finally, lemma \ref{lemma: inverse of hessian of constrained quadratic} yields that the desired limit of inverse Hessians is given by
+		$$P_{t\vert t} = H_t^{-1} - H_t^{-1}A^\top(A_tH_t^{-1}A_t^\top)^{-1}A_tH_t^{-1}.$$
+		
+	We obtain the ``Quadratic Kalman'' algorithm:
+	\begin{algorithm}[H]
+		\caption*{\textbf{Algorithm:} Quadratic-Kalman}
+		\begin{algorithmic}
+			
+			\Require Initial state and state covariance estimate $x_0$ and $P_0$.
+			\Require State transition and noise matrices $F_t$, $Q_t$.
+			\Require Hessians $H_0q_t$ and gradients $\nabla_0q_t$.
+			\Require Maybe constraint data $A_t$, $b_t$.
+			
+			\State $x_\upd \gets x_0$
+			\State $P_\upd \gets P_0$
+			
+			\For{$t=1,\dots,T$}
+			\State 
+			\State $\triangleright$ \textbf{Prediction Step}
+			\State $x_\pred\gets F_t x_\upd$
+			\State $P_\pred\gets F_tP_\upd F_t^\top + Q_t$
+			
+			\State
+			\State $\triangleright$ \textbf{Update step}
+			\State $g \gets \nabla_0q_t - P_\pred^{-1}x_\pred$\Comment{gradient of updated objective}
+			\State $H \gets H_tq_t + P_\pred^{-1}$\Comment{Hessian of updated objective}
+			\If{constraint}
+			\State $\lambda \gets -(A_tH^{-1}A_t^\top)^{-1}(b_t + AH^{-1}g)$
+			\State $x_\upd \gets -H^{-1}(b_t + A_t^\top\lambda)$
+			\State $P_\upd \gets H^{-1} - H^{-1}A_t^\top(A_tH^{-1}A_t^\top)^{-1}A_tH^{-1}$
+			\Else
+			\State $x_\upd\gets -H^{-1}g$
+			\State $P_\upd\gets H^{-1}$
+			\EndIf
+			
+			\State 
+			\EndFor
+			
+		\end{algorithmic}
+	\end{algorithm}
+	
+	
+	\appendix
+	\section{Appendix}
+	
+	\begin{lemma}
+		\label{lemma: unconstrained quadratic}
+		
+		Let $H\in \R^{n\times n}$ be symmetric positive definite and $g\in \R^n$ be arbitrary. Then the quadratic objective
+		$$q(x) = \frac 12 x^\top Hx + g^\top x$$
+		with $x\in \R^n$ is strictly convex with unique minimizer given by
+		$$x^\ast = -H^{-1}g.$$
+	\end{lemma}
+	\begin{proof}
+		Observe that for any $x\in \R^n$ we have $\nabla_x q = Hx + g$ as $H^\top =H$ by symmetry and hence $H_xq = H$. Thus, the hessian $H_xq$ of $q$ at any $x\in \R^n$ is positive definite and hence $q$ is strictly convex. Thus, there is unique minimizer $x^\ast$ of $q$ that satisfies $\nabla_{x^\ast} q = 0$. Clearly, $\nabla_{x^\ast}q = Hx^\ast + g = 0$ is equivalent to $x^\ast = -H^{-1}g$ by invertibility of $H$.
+	\end{proof}
+	
+	\begin{lemma}
+		\label{lemma: constrained quadratic}
+		
+		Consider again the setting of lemma \ref{lemma: unconstrained quadratic}. Let further $A \in \R^{m\times n}$ have full row rank and $b\in \R^m$ be arbitrary. The program
+		\begin{align*}
+			\min\; &\frac12 x^\top Hx + g^\top x\\
+			\text{s.t. } &Ax=b
+		\end{align*}
+		has a unique minimizer given by
+		$$x^\ast = -H^{-1}(g + A^\top \lambda^\ast)$$
+		where
+		$$\lambda^\ast = -(A H^{-1} A^\top)^{-1}(b + AH^{-1} g)$$
+	\end{lemma}
+	\begin{proof}
+		The existence of the unique minimizer $x^\ast$ follows since $q(x)=\frac 12 x^\top Hx + g^\top x$ is strictly convex on the affine, non-empty (by full row rank of $A$) subspace $\{x\,\vert\,Ax=b\}$. If $x^\ast$ is a global (hence local) optimum, the KKT-conditions assert that there is a $\lambda^\ast \in \R^m$ such that $Ax^\ast = b$ and
+		$$\nabla_{x^\ast}q + A^\top\lambda^\ast = Hx^\ast+g + A^\top\lambda^\ast = 0.$$
+		Since $H$ is invertible we find that
+		$$x^\ast = -H^{-1}(g + A^\top \lambda^\ast).$$
+		Substituting $x^\ast$ in $Ax^\ast = b$ we find that
+		$$b = -AH^{-1}(g+A^\top\lambda^\ast)$$
+		and hence 
+		$$\lambda^\ast = -(A H^{-1} A^\top)^{-1}(b + AH^{-1} g)$$
+		as claimed, since $AH^{-1}A^\top$ is invertible since $H^{-1}$ is and $A$ a full row rank.
+	\end{proof}
+	
+	\begin{lemma}
+		\label{lemma: inverse of hessian of constrained quadratic}
+		
+		Consider again the setting of lemma \ref{lemma: unconstrained quadratic}. Let $\varepsilon > 0$ and consider the augmented quadratic
+		$$\tilde q_\varepsilon(x) = \frac12 x^\top H x + g^\top x + \frac1{2\varepsilon}\Vert Ax-b\Vert^2_2$$
+		and denote by $H_\varepsilon$ is Hessian at $0$. Then
+		$$(H_0\tilde q_\varepsilon)^{-1} \to H^{-1}-H^{-1}A^\top(AH^{-1}A^\top)^{-1}AH^{-1}$$
+		as $\varepsilon\to 0$.
+	\end{lemma}
+	\begin{proof}
+		Observe that
+		\begin{align*}
+			\tilde q_\varepsilon(x) &= \frac 12 x^\top Hx + g^\top x + \frac1{2\varepsilon}\Vert Ax-b\Vert_2^2\\
+			&= \frac 12 x^\top Hx + g^\top x + \frac1{2\varepsilon}(Ax-b)^\top(Ax-b)\\
+			&= \frac 12 x^\top Hx + g^\top x + \frac1{2\varepsilon}x^\top A^\top A x + \frac1\varepsilon b^\top A x + \frac1{2\varepsilon}b^\top b\\
+			&= \frac12 x^\top \left(H + \frac1\varepsilon A^\top A\right)x + \left(g - \frac 1\varepsilon A^\top b\right)^\top x + \frac1{2\varepsilon}b^\top b
+		\end{align*}
+		and hence that $H_0\tilde q_\varepsilon = H + \frac 1\varepsilon A^\top A$. The Woodbury matrix identity thus gives that
+		\begin{align*}
+			(H_0 \tilde q_\varepsilon)^{-1} &= \left(H+\frac 1\varepsilon A^\top A\right)^{-1}\\
+			&= \left(H + A^\top \cdot \frac1\varepsilon E \cdot A\right)^{-1}\\
+			&= H^{-1} - H^{-1}A^\top(\varepsilon E + AH^{-1}A^\top)^{-1}AH^{-1}
+		\end{align*}
+		which clearly converges to
+		$$H^{-1} - H^{-1}A^\top(AH^{-1}A^\top)^{-1}AH^{-1}$$
+		for $\varepsilon\to 0$, as claimed.
+	\end{proof}
+	
+\end{document}
