@@ -27,11 +27,9 @@ from jax.numpy import ndarray as jndarray
 
 
 # custom types
-class FilterOutput(TypedDict):
+class QuadraticKalmanOutput(TypedDict):
     predicted_states: jndarray
     predicted_covariances: jndarray
-    predicted_observations: jndarray
-    innovations: jndarray
     updated_states: jndarray
     updated_covariances: jndarray
 
@@ -50,91 +48,85 @@ class FilterOutput(TypedDict):
 ########################################################################################################################
 
 
-def kalman(
-    observations: jndarray,
+def quadratic_kalman(
     initial_state_estimate: jndarray,
     initial_state_covariance: jndarray,
-    observation_matrices: jndarray,
     state_transition_matrices: jndarray,
-    observation_noise_covariance: jndarray,
-    state_transition_noise_covariance: jndarray
-) -> FilterOutput:
+    state_transition_noise_covariance: jndarray,
+    gradients_of_quadratic_objective: jndarray,
+    hessians_of_quadratic_objective: jndarray
+) -> QuadraticKalmanOutput:
     """
-    Estimates the expectation and covariance of the state at each point in time
-    (both a priori and a posteriori) using the supplied observations.
+    Estimates the state of the specified system using "Quadratic Kalman", see ../tex_files/main.pdf for details.
 
-    :param observations: array of shape (T, d_obs),
-    :param initial_state_estimate: array of shape (d_state,),
-    :param initial_state_covariance: array of shape (d_state, d_state),
-    :param observation_matrices: array of shape (d_obs, d_state),
-    :param state_transition_matrices: array of shape (d_state, d_state),
-    :param observation_noise_covariance: array of shape (d_obs, d_obs),
-    :param state_transition_noise_covariance: array of shape (d_state, d_state).
-
-    :return: The estimates of a priori and a posteriori expectation and covariance of state, as well as the innovations.
+    :param initial_state_estimate: of shape (d,),
+    :param initial_state_covariance: of shape (d, d),
+    :param state_transition_matrices: of shape (T, d, d),
+    :param state_transition_noise_covariance: of shape (T, d, d),
+    :param gradients_of_quadratic_objective: of shape (T, d),
+    :param hessians_of_quadratic_objective: of shape (T, d, d).
+    :return:
+        The estimates x_{t|t-1}, P_{t|t-1} and x_{t|t}, P_{t|t} of states and state covariances batched across time.
     """
 
-    # Note: This implementation closely follows https://en.wikipedia.org/wiki/Kalman_filter and follows its notation.
-    # The article was accessed at 29.11.2025, 18:58
+    # assert that hessians and gradients are batched (as they replace observations)
+    if len(hessians_of_quadratic_objective.shape) != 3:
+        raise ValueError("Argument \'hessians_of_quadratic_objective\' must have 3 axes!")
+    if len(gradients_of_quadratic_objective.shape) != 2:
+        raise ValueError("Argument \'gradients_of_quadratic_objective\' must have 2 axes!")
 
-    # get relevant counts
-    T, d_obs = observations.shape
-    d_state, = initial_state_estimate.shape
+    # get number of points in time and dimensionality of state
+    T, d = gradients_of_quadratic_objective.shape
 
-    # get Hs, Fs, Qs and Rs and repeat them across time if needed
-    Hs = maybe_repeat_across_time(observation_matrices, repeats=T)
+    # get Fs, Qs, hessians and gradients and repeat them across time if needed
     Fs = maybe_repeat_across_time(state_transition_matrices, repeats=T)
     Qs = maybe_repeat_across_time(state_transition_noise_covariance, repeats=T)
-    Rs = maybe_repeat_across_time(observation_noise_covariance, repeats=T)
+    hessians = hessians_of_quadratic_objective
+    gradients = gradients_of_quadratic_objective
 
     # a function that will be iterated by jax.lax.scan for each point in time
     def step(carry, inputs):
 
         # unpack carry and inputs
-        m_prev, P_prev = carry
-        y_t, H_t, F_t, Q_t, R_t = inputs
+        x_prev, P_prev = carry
+        F_t, Q_t, hessian_t, gradient_t = inputs
 
         # prediction step
-        m_predicted = F_t @ m_prev
+        x_predicted = F_t @ x_prev
         P_predicted = F_t @ P_prev @ F_t.T + Q_t
-        y_predicted = H_t @ m_predicted
 
         # enforce symmetry (for numerical stability)
         P_predicted: jndarray = 0.5 * (P_predicted + P_predicted.T)
 
-        # get innovation and innovation covariance
-        innovation = y_t - y_predicted
-        S = H_t @ P_predicted @ H_t.T + R_t
+        # get gradient and Hessian of the composite objective (predicted prior + user-specified quadratic objective)
+        precision_predicted = jnp.linalg.solve(P_predicted, jnp.eye(d))
+        total_gradient = gradient_t - precision_predicted @ x_predicted
+        total_hessian = hessian_t + precision_predicted
 
-        # calculate optimal Kalman gain K = P_predicted @ H_t.T @ S^{-1}, notice that solving
-        # K @ S = P_predicted @ H_t.T is equivalent to solving S.T @ K.T = H_t @ P_predicted.T
-        K = jnp.linalg.solve(S.T, H_t @ P_predicted.T).T
-
-        # update step, TODO: Joseph form of update guarantees positive semi-definiteness of P_updated
-        m_updated = m_predicted + K @ innovation
-        P_updated = (jnp.eye(d_state) - K @ H_t) @ P_predicted
+        # update step
+        x_updated = -jnp.linalg.solve(total_hessian, total_gradient)
+        P_updated = jnp.linalg.solve(total_hessian, jnp.eye(d))
 
         # enforce symmetry (for numerical stability)
-        P_updated: jndarray = 0.5 * (P_updated + P_updated.T)
+        P_updated = 0.5 * (P_updated + P_updated.T)
 
         # return results
-        carry = (m_updated, P_updated)
-        outputs = (m_predicted, P_predicted, m_updated, P_updated, y_predicted, innovation)
+        carry = (x_updated, P_updated)
+        outputs = (x_predicted, P_predicted, x_updated, P_updated)
+
         return carry, outputs
 
     # get initial input and carry for use in jax.lax.scan
-    inputs = (observations, Hs, Fs, Qs, Rs)
+    inputs = (Fs, Qs, hessians, gradients)
     init_carry = (initial_state_estimate, initial_state_covariance)
 
     # perform scan
     _, outputs = jax.lax.scan(step, init_carry, inputs, length=T)
-    ms_predicted, Ps_predicted, ms_updated, Ps_updated, ys_predicted, innovations = outputs
+    xs_predicted, Ps_predicted, xs_updated, Ps_updated = outputs
 
     return {
-        "predicted_states": ms_predicted,
+        "predicted_states": xs_predicted,
         "predicted_covariances": Ps_predicted,
-        "predicted_observations": innovations,
-        "innovations": innovations,
-        "updated_states": ms_updated,
+        "updated_states": xs_updated,
         "updated_covariances": Ps_updated
     }

@@ -3,7 +3,6 @@
 ########################################################################################################################
 
 # standard library imports
-import unittest
 
 # internal imports
 from quadratic_kalman.reshaping_utils import maybe_repeat_across_time

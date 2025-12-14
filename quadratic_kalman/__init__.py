@@ -6,7 +6,9 @@
 from importlib.metadata import version
 
 # internal imports
-from .__basic_kalman_for_reference import kalman
+from .basic_kalman import kalman
+from .unconstrained_quadratic_kalman import quadratic_kalman as unconstrained_quadratic_kalman
+from .unconstraint_kalman_regression import kalman_regression
 
 # external imports
 

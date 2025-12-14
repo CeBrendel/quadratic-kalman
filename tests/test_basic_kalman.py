@@ -3,10 +3,9 @@
 ########################################################################################################################
 
 # standard library imports
-import unittest
 
 # internal imports
-from quadratic_kalman.__basic_kalman_for_reference import kalman
+from quadratic_kalman.basic_kalman import kalman
 
 # external imports
 import jax
