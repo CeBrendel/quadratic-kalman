@@ -153,7 +153,7 @@
 			\State $g \gets \nabla_0q_t - P_\pred^{-1}x_\pred$\Comment{gradient of updated objective}
 			\State $H \gets H_tq_t + P_\pred^{-1}$\Comment{Hessian of updated objective}
 			\If{constraint}
-			\State $\lambda \gets -(A_tH^{-1}A_t^\top)^{-1}(b_t + AH^{-1}g)$
+			\State $\lambda \gets -(A_tH^{-1}A_t^\top)^{-1}(b_t + A_tH^{-1}g)$
 			\State $x_\upd \gets -H^{-1}(b_t + A_t^\top\lambda)$
 			\State $P_\upd \gets H^{-1} - H^{-1}A_t^\top(A_tH^{-1}A_t^\top)^{-1}A_tH^{-1}$
 			\Else

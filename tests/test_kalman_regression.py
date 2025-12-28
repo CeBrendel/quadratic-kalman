@@ -71,23 +71,11 @@ class TestKalman(TestCase):
             parameter_transition_matrix=None,
             parameter_transition_noise_covariance=random_walk_std**2,
             observation_noise_covariance=noise_std**2,
-            prior_importance=10.
+            prior_importance=1.
         )
 
         true_final_parameter = true_parameters[-1]
         final_parameter_estimate = result["updated_parameters"][-1, ...]
-
-        # import matplotlib.pyplot as plt
-        # print(true_final_parameter)
-        # print(final_parameter_estimate)
-        # fig, axs = plt.subplots(nrows=2, ncols=3)
-        # for i in range(2):
-        #     for j in range(3):
-        #         axs[i, j].plot(true_parameters[:, i, j], label=f"true {i}{j}")
-        #         axs[i, j].plot(result["updated_parameters"][:, i, j], label=f"{i}{j}")
-        #         axs[i, j].grid()
-        #         axs[i, j].legend()
-        # plt.show()
 
         # assert that final position estimate is close to true position
         self.assertTrue(jnp.mean(jnp.abs(true_final_parameter - final_parameter_estimate)) < 0.5)
